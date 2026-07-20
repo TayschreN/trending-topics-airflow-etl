@@ -1,5 +1,6 @@
 import nltk
 import re
+import unicodedata
 import pandas as pd
 import logging
 from collections import Counter
@@ -8,13 +9,19 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 logger = logging.getLogger(__name__)
 
 
+def _normalize(text: str) -> str:
+    nfkd = unicodedata.normalize("NFKD", text)
+    return nfkd.encode("ASCII", "ignore").decode("ASCII")
+
+
 def tokenize_and_clean(texto: str, stopwords_customizadas: list) -> list[str]:
     stopwords = set(nltk.corpus.stopwords.words("portuguese") + stopwords_customizadas)
     tokens = nltk.word_tokenize(texto.lower(), language="portuguese")
+    pattern = re.compile(r"^[a-zà-üã-õâ-ûê-îô-ûç]+$", re.UNICODE)
     tokens = [
         t
         for t in tokens
-        if re.match(r"^[a-zà-ú]+$", t) and t not in stopwords and len(t) > 2
+        if pattern.match(t) and _normalize(t) not in stopwords and len(t) > 2
     ]
     return tokens
 
