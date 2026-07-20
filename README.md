@@ -1,5 +1,7 @@
 # Radar de Tópicos Emergentes + Sentimento com Airflow
 
+![Dashboard](dashboard/screenshots/dashboard_full.png)
+
 Pipeline ETL que coleta notícias de portais brasileiros (G1, Folha, CNN Brasil), processa com NLP, analisa sentimento e detecta tópicos emergentes, tudo orquestrado pelo Apache Airflow e visualizado em um dashboard interativo com Dash.
 
 ## Arquitetura
@@ -19,7 +21,7 @@ Pipeline ETL que coleta notícias de portais brasileiros (G1, Folha, CNN Brasil)
                     ┌──────▼───────┐
                     │   Silver     │  clean + dedup + sentiment
                     │ (Clean/Dedup │  + nlp_processing
-                    │  /Sentiment) │
+                    │  /Sentiment) │  (Parquet intermediário)
                     └──────┬───────┘
                            │
                     ┌──────▼───────┐
@@ -77,16 +79,28 @@ Dash oferece maior controle de layout com callbacks reativos, ideal para múltip
 | Vizualização | Dash + Plotly + wordcloud |
 | Testes | pytest |
 | Config | YAML |
+| Containerização | Docker + docker-compose |
+| CI/CD | GitHub Actions |
 
 ## Como rodar localmente
 
-### 1. Pré-requisitos
+### Opção 1: Docker (recomendado)
+
+```bash
+docker compose up -d
+```
+
+- Airflow UI: http://localhost:8080 (admin/admin)
+- Dashboard: http://localhost:8050
+
+### Opção 2: Manual
+
+#### 1. Pré-requisitos
 
 - Python 3.10 ou 3.11
 - Git
-- Conta GitHub autenticada (opcional, para publish)
 
-### 2. Clonar e criar ambiente virtual
+#### 2. Clonar e criar ambiente virtual
 
 ```bash
 git clone <seu-repositorio> trending-topics-airflow
@@ -96,7 +110,7 @@ source venv/bin/activate   # Linux/Mac
 # ou .\venv\Scripts\activate  # Windows
 ```
 
-### 3. Instalar Airflow (com constraints — obrigatório)
+#### 3. Instalar Airflow (com constraints — obrigatório)
 
 ```bash
 AIRFLOW_VERSION=2.10.5
@@ -105,13 +119,13 @@ CONSTRAINT_URL="https://raw.githubusercontent.com/apache/airflow/constraints-${A
 pip install "apache-airflow==${AIRFLOW_VERSION}" --constraint "${CONSTRAINT_URL}"
 ```
 
-### 4. Instalar demais dependências
+#### 4. Instalar demais dependências
 
 ```bash
 pip install -r requirements.txt
 ```
 
-### 5. Recursos NLTK
+#### 5. Recursos NLTK
 
 ```python
 import nltk
@@ -119,14 +133,14 @@ nltk.download('punkt')
 nltk.download('stopwords')
 ```
 
-### 6. Configurar AIRFLOW_HOME
+#### 6. Configurar AIRFLOW_HOME
 
 ```bash
 export AIRFLOW_HOME=$(pwd)
 # ou no Windows (PowerShell): $env:AIRFLOW_HOME = (Get-Location).Path
 ```
 
-### 7. Inicializar e rodar Airflow
+#### 7. Inicializar e rodar Airflow
 
 ```bash
 airflow standalone
@@ -136,7 +150,7 @@ A UI do Airflow estará disponível em `http://localhost:8080`.
 
 A DAG `trending_topics_pipeline` aparecerá na interface. Acione-a manualmente para a primeira execução.
 
-### 8. Rodar o dashboard
+#### 8. Rodar o dashboard
 
 ```bash
 python dashboard/app.py
@@ -159,38 +173,62 @@ trending-topics-airflow/
 ├── dags/
 │   └── trending_topics_pipeline.py
 ├── src/
-│   ├── extract.py          # Coleta RSS → Bronze
-│   ├── clean.py            # Limpeza e normalização
-│   ├── deduplication.py    # Remoção de duplicatas por similaridade
-│   ├── sentiment_analysis.py # Análise de sentimento (pysentimiento)
-│   ├── nlp_processing.py   # Tokenização, frequência, TF-IDF
-│   ├── trend_detection.py  # Z-score e detecção de emergentes
-│   └── aggregate.py        # Agregação final → Gold
+│   ├── extract.py              # Coleta RSS → Bronze
+│   ├── clean.py                # Limpeza e normalização
+│   ├── deduplication.py        # Remoção de duplicatas por similaridade
+│   ├── sentiment_analysis.py   # Análise de sentimento (pysentimiento)
+│   ├── nlp_processing.py       # Tokenização, frequência, TF-IDF
+│   ├── trend_detection.py      # Z-score e detecção de emergentes
+│   └── aggregate.py            # Agregação final → Gold
 ├── dashboard/
-│   ├── app.py              # Dashboard em Dash
-│   └── assets/             # Word clouds geradas
+│   ├── app.py                  # Dashboard em Dash
+│   ├── assets/                 # Word clouds geradas
+│   └── screenshots/            # Screenshots do dashboard
 ├── config/
-│   └── config.yaml         # Parâmetros do pipeline
+│   └── config.yaml             # Parâmetros do pipeline
 ├── data/
-│   ├── bronze/             # Dados brutos (Parquet)
-│   ├── silver/             # Dados limpos (Parquet)
-│   └── gold/               # Dados agregados (Parquet)
+│   ├── bronze/                 # Dados brutos (Parquet)
+│   ├── silver/                 # Dados limpos (Parquet)
+│   └── gold/                   # Dados agregados (Parquet)
 ├── tests/
 │   ├── test_extract.py
+│   ├── test_clean.py
+│   ├── test_deduplication.py
 │   ├── test_nlp_processing.py
 │   ├── test_sentiment_analysis.py
-│   └── test_trend_detection.py
+│   ├── test_trend_detection.py
+│   ├── test_aggregate.py
+│   └── test_dag_validation.py
+├── docker-compose.yml          # Orquestração Docker
+├── Dockerfile                  # Imagem personalizada Airflow
+├── pyproject.toml              # Configuração do projeto
+├── .github/workflows/ci.yml    # CI/CD GitHub Actions
+├── .pre-commit-config.yaml     # Hooks de pré-commit
+├── .env.example                # Template de variáveis de ambiente
 ├── .gitignore
 ├── requirements.txt
 └── README.md
 ```
+
+## Testes
+
+```bash
+pytest tests/ -v
+```
+
+## CI/CD
+
+O projeto inclui GitHub Actions para:
+
+- **Lint** com ruff
+- **Testes** com pytest (Python 3.10 e 3.11)
+- **Cobertura** de código via pytest-cov
 
 ## Limitações conhecidas e próximos passos
 
 - **Categorização por palavra-chave:** hoje usa um dicionário manual de palavras-chave para classificar termos em temas (política, economia, etc). Evolução natural: um classificador supervisionado (ex: zero-shot classification com modelos como BERT).
 - **Sentimento no nível do termo:** é inferido agregando o sentimento das notícias que contêm o termo, não analisado diretamente no contexto do termo. Uma abordagem mais precisa extrairia a sentença onde o termo aparece e analisaria só ela.
 - **Fonte única de dados:** apenas RSS. Adicionar Twitter/X, Google News ou APIs de clipping melhoraria a cobertura.
-- **Airflow no Windows:** o suporte oficial é para Linux. No Windows, use WSL2 ou containers Docker.
 - **Histórico limitado:** as primeiras 2 semanas de execução não geram detecção de emergentes (marcados como `None`).
 
 ## Licença

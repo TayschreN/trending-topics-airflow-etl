@@ -16,82 +16,101 @@ from src.sentiment_analysis import get_sentiment_analyzer, compute_sentiment
 from src.nlp_processing import tokenize_and_clean, compute_word_frequency, compute_tfidf
 from src.trend_detection import load_historical_baseline, compute_emergence_score
 from src.aggregate import aggregate_daily_results
-from src import __init__ as _
 
 import yaml
 
 logger = logging.getLogger(__name__)
 
-CONFIG_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "config", "config.yaml")
-GOLD_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "gold")
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+CONFIG_PATH = os.path.join(BASE_DIR, "config", "config.yaml")
+SILVER_PATH = os.path.join(BASE_DIR, "data", "silver")
+GOLD_PATH = os.path.join(BASE_DIR, "data", "gold")
 
 with open(CONFIG_PATH, "r") as f:
     config = yaml.safe_load(f)
 
 
+def _silver_path(task_id: str, data_exec: str) -> str:
+    os.makedirs(SILVER_PATH, exist_ok=True)
+    return os.path.join(SILVER_PATH, f"{task_id}_{data_exec}.parquet")
+
+
 def _extract(**context):
     data_exec = context["ds"]
     df = extract_rss_feeds(config, data_exec)
-    return df.to_json(orient="split")
+    path = _silver_path("extract", data_exec)
+    df.to_parquet(path, index=False)
+    return path
 
 
 def _validate(**context):
-    json_data = context["ti"].xcom_pull(task_ids="extract_rss_feeds")
-    if not json_data:
+    path = context["ti"].xcom_pull(task_ids="extract_rss_feeds")
+    if not path or not os.path.exists(path):
         raise AirflowException("Nenhum dado extraído — falha na task anterior")
-    logger.info("Validação OK: dados recebidos")
-    return json_data
+    logger.info("Validação OK: dados recebidos em %s", path)
+    return path
 
 
 def _clean(**context):
-    json_data = context["ti"].xcom_pull(task_ids="validate_raw_data")
+    path = context["ti"].xcom_pull(task_ids="validate_raw_data")
     import pandas as pd
-    df = pd.read_json(json_data, orient="split")
+    df = pd.read_parquet(path)
     df = clean_and_normalize(df)
-    return df.to_json(orient="split")
+    out_path = _silver_path("clean", context["ds"])
+    df.to_parquet(out_path, index=False)
+    return out_path
 
 
 def _deduplicate(**context):
-    json_data = context["ti"].xcom_pull(task_ids="clean_and_normalize_text")
+    path = context["ti"].xcom_pull(task_ids="clean_and_normalize_text")
     import pandas as pd
-    df = pd.read_json(json_data, orient="split")
+    df = pd.read_parquet(path)
     threshold = config["threshold_similaridade_dedup"]
     df = remove_duplicates(df, threshold)
-    return df.to_json(orient="split")
+    out_path = _silver_path("dedup", context["ds"])
+    df.to_parquet(out_path, index=False)
+    return out_path
 
 
 def _sentiment(**context):
-    json_data = context["ti"].xcom_pull(task_ids="remove_duplicates")
+    path = context["ti"].xcom_pull(task_ids="remove_duplicates")
     import pandas as pd
-    df = pd.read_json(json_data, orient="split")
+    df = pd.read_parquet(path)
     analyzer = get_sentiment_analyzer()
     df = compute_sentiment(df, analyzer)
-    return df.to_json(orient="split")
+    out_path = _silver_path("sentiment", context["ds"])
+    df.to_parquet(out_path, index=False)
+    return out_path
 
 
 def _tokenize_and_process(**context):
-    json_data = context["ti"].xcom_pull(task_ids="compute_sentiment_scores")
+    path = context["ti"].xcom_pull(task_ids="compute_sentiment_scores")
     import pandas as pd
-    df = pd.read_json(json_data, orient="split")
+    df = pd.read_parquet(path)
     textos = df["texto_completo"].fillna("").tolist()
     stopwords_custom = config.get("stopwords_customizadas", [])
     lista_tokens = [tokenize_and_clean(t, stopwords_custom) for t in textos]
     df_tokens = pd.DataFrame({"texto_completo": textos, "tokens": lista_tokens})
-    return df_tokens.to_json(orient="split")
+    out_path = _silver_path("tokens", context["ds"])
+    df_tokens.to_parquet(out_path, index=False)
+    return out_path
 
 
 def _frequency_and_tfidf(**context):
-    json_data = context["ti"].xcom_pull(task_ids="tokenize_and_process")
+    path = context["ti"].xcom_pull(task_ids="tokenize_and_process")
     import pandas as pd
-    df_tokens = pd.read_json(json_data, orient="split")
+    df_tokens = pd.read_parquet(path)
     lista_tokens = df_tokens["tokens"].tolist()
     corpus = df_tokens["texto_completo"].tolist()
     df_freq = compute_word_frequency(lista_tokens)
     corpus_minimo = config["corpus_minimo_tfidf"]
     df_tfidf = compute_tfidf(corpus, corpus_minimo)
-    result = {"freq": df_freq.to_json(orient="split"), "tfidf": df_tfidf.to_json(orient="split")}
+    freq_path = _silver_path("freq", context["ds"])
+    tfidf_path = _silver_path("tfidf", context["ds"])
+    df_freq.to_parquet(freq_path, index=False)
+    df_tfidf.to_parquet(tfidf_path, index=False)
     import json
-    return json.dumps(result)
+    return json.dumps({"freq_path": freq_path, "tfidf_path": tfidf_path})
 
 
 def _detect_emerging(**context):
@@ -100,17 +119,20 @@ def _detect_emerging(**context):
     json_data = context["ti"].xcom_pull(task_ids="compute_frequency_and_tfidf")
     parsed = json.loads(json_data)
     import pandas as pd
-    df_freq = pd.read_json(parsed["freq"], orient="split")
+    df_freq = pd.read_parquet(parsed["freq_path"])
 
     gold_path = GOLD_PATH
     janela = config["janela_historica_dias"]
     baseline = load_historical_baseline(gold_path, janela, data_exec)
     threshold = config["threshold_zscore_emergente"]
     df_emerg = compute_emergence_score(df_freq, baseline, threshold)
+    emerg_path = _silver_path("emerging", data_exec)
+    df_emerg.to_parquet(emerg_path, index=False)
     result = {
-        "emergencia": df_emerg.to_json(orient="split"),
-        "tfidf": parsed["tfidf"],
+        "emerg_path": emerg_path,
+        "tfidf_path": parsed["tfidf_path"],
     }
+    import json
     return json.dumps(result)
 
 
@@ -119,16 +141,16 @@ def _aggregate(**context):
     import pandas as pd
     data_exec = context["ds"]
 
-    raw_noticias = context["ti"].xcom_pull(task_ids="compute_sentiment_scores")
-    df_noticias = pd.read_json(raw_noticias, orient="split")
+    sentiment_path = context["ti"].xcom_pull(task_ids="compute_sentiment_scores")
+    df_noticias = pd.read_parquet(sentiment_path)
 
     json_data = context["ti"].xcom_pull(task_ids="detect_emerging_topics")
     parsed = json.loads(json_data)
-    df_emerg = pd.read_json(parsed["emergencia"], orient="split")
-    df_tfidf = pd.read_json(parsed["tfidf"], orient="split")
+    df_emerg = pd.read_parquet(parsed["emerg_path"])
+    df_tfidf = pd.read_parquet(parsed["tfidf_path"])
 
-    df_tokens_data = context["ti"].xcom_pull(task_ids="tokenize_and_process")
-    df_tokens = pd.read_json(df_tokens_data, orient="split")
+    tokens_path = context["ti"].xcom_pull(task_ids="tokenize_and_process")
+    df_tokens = pd.read_parquet(tokens_path)
     df_freq = compute_word_frequency(df_tokens["tokens"].tolist())
 
     result = aggregate_daily_results(

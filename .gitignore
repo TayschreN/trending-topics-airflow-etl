@@ -7,6 +7,7 @@ airflow.cfg
 airflow.db
 logs/
 dashboard/assets/*.png
+!dashboard/assets/.gitkeep
 .env
 *.egg-info/
 .pytest_cache/
