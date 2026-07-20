@@ -67,6 +67,7 @@ for data in base_datas:
             else:
                 emergente = False
 
+        fontes_escolhidas = random.sample(["g1", "folha", "cnn_brasil"], random.randint(1, 3))
         rows_topics.append({
             "data": data_str,
             "termo": termo,
@@ -77,6 +78,7 @@ for data in base_datas:
             "tema": tema,
             "sentimento_medio_termo": sentimento_medio,
             "sentimento_predominante_termo": sentimento,
+            "fontes": ",".join(fontes_escolhidas),
         })
 
         if tema not in sentimento_tema:

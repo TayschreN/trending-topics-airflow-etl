@@ -156,6 +156,49 @@ def _theme_color(tema):
     return cores.get(tema, "#6b7280")
 
 
+def _apply_filters(df1, df2, temas, fontes, sentimento, start, end):
+    if df1.empty:
+        return df1, df2
+    if start:
+        df1 = df1[df1["data"] >= start]
+    if end:
+        df1 = df1[df1["data"] <= end]
+    if temas:
+        df1 = df1[df1["tema"].isin(temas)]
+    if fontes and "fontes" in df1.columns:
+        mask = df1["fontes"].apply(lambda x: any(f in str(x).split(",") for f in fontes))
+        df1 = df1[mask]
+    if sentimento:
+        df1 = df1[df1["sentimento_predominante_termo"].isin(sentimento)]
+
+    if not df2.empty:
+        if start:
+            df2 = df2[df2["data"] >= start]
+        if end:
+            df2 = df2[df2["data"] <= end]
+        if temas:
+            df2 = df2[df2["tema"].isin(temas)]
+
+    return df1, df2
+
+
+def _make_empty_fig(msg="Sem dados no período"):
+    fig = go.Figure()
+    fig.add_annotation(
+        text=msg, x=0.5, y=0.5, xref="paper", yref="paper",
+        showarrow=False, font=dict(size=14, color="#8b949e"),
+    )
+    fig.update_layout(
+        paper_bgcolor="#1a1d2e", plot_bgcolor="#1a1d2e",
+        margin=dict(l=20, r=20, t=40, b=20),
+        font=dict(color="#c9d1d9"),
+        height=300,
+        xaxis=dict(visible=False),
+        yaxis=dict(visible=False),
+    )
+    return fig
+
+
 
 
 
@@ -196,7 +239,7 @@ def _init_filters(_):
         min_d, max_d = None, None
 
     fontes = set()
-    if not df1.empty:
+    if not df1.empty and "fontes" in df1.columns:
         for f in df1["fontes"].dropna():
             for src in str(f).split(","):
                 src = src.strip()
@@ -235,36 +278,41 @@ def _update_kpis(temas, fontes, sentimento, start, end):
     temas_ativos = df_hoje["tema"].nunique()
 
     sent_icon = "😊" if sent_medio > 0.1 else ("😡" if sent_medio < -0.1 else "😐")
+    qtd_hoje = int(df_hoje["emergente"].dropna().sum())
+    total_noticias_periodo = len(df1)
+    total_termos_hoje = len(df_hoje)
+    temas_ativos = df1["tema"].nunique()
+    dias_com_dados = df1["data"].nunique()
 
     return [
         html.Div([
             html.Div("📰", className="kpi-icon"),
-            html.Div(str(len(df1)), className="kpi-value"),
+            html.Div(str(total_noticias_periodo), className="kpi-value"),
             html.Div("Notícias no período", className="kpi-label"),
         ], className="kpi-card"),
         html.Div([
             html.Div(sent_icon, className="kpi-icon"),
             html.Div(f"{sent_medio:.2f}" if not pd.isna(sent_medio) else "N/A", className="kpi-value"),
-            html.Div("Sentimento médio", className="kpi-label"),
+            html.Div("Sentimento médio hoje", className="kpi-label"),
         ], className="kpi-card"),
         html.Div([
             html.Div("🔥", className="kpi-icon"),
-            html.Div(str(int(df1[df1["data"] == latest]["emergente"].dropna().sum())), className="kpi-value"),
+            html.Div(str(qtd_hoje), className="kpi-value"),
             html.Div("Tópicos emergentes", className="kpi-label"),
         ], className="kpi-card"),
         html.Div([
             html.Div("📊", className="kpi-icon"),
-            html.Div(str(df1["tema"].nunique()), className="kpi-value"),
+            html.Div(str(temas_ativos), className="kpi-value"),
             html.Div("Temas ativos", className="kpi-label"),
         ], className="kpi-card"),
         html.Div([
-            html.Div("📰", className="kpi-icon"),
-            html.Div(str(len(df1)), className="kpi-value"),
-            html.Div("Total de termos", className="kpi-label"),
+            html.Div("📝", className="kpi-icon"),
+            html.Div(str(total_termos_hoje), className="kpi-value"),
+            html.Div("Termos hoje", className="kpi-label"),
         ], className="kpi-card"),
         html.Div([
             html.Div("📅", className="kpi-icon"),
-            html.Div(str(df1["data"].nunique()), className="kpi-value"),
+            html.Div(str(dias_com_dados), className="kpi-value"),
             html.Div("Dias com dados", className="kpi-label"),
         ], className="kpi-card"),
     ]
@@ -283,7 +331,6 @@ def _update_insights(temas, fontes, sentimento, start, end):
 
     latest = df1["data"].max()
     df_hoje = df1[df1["data"] == latest]
-    df_anterior = df1[df1["data"] < latest] if not df1.empty else pd.DataFrame()
 
     insights = []
 
@@ -496,10 +543,10 @@ def _update_theme_dist(temas, fontes, sentimento, start, end):
     )
     fig.update_layout(
         **_fig_layout("Distribuição por tema"),
-        xaxis=dict(title="", tickangle=-30),
-        yaxis=dict(title="Quantidade de termos"),
         showlegend=False,
     )
+    fig.update_xaxes(title="", tickangle=-30)
+    fig.update_yaxes(title="Quantidade de termos")
     fig.update_traces(textposition="outside", textfont=dict(color="#c9d1d9"))
     return dcc.Graph(figure=fig)
 
@@ -536,10 +583,10 @@ def _update_source_chart(temas, fontes, sentimento, start, end):
     )
     fig.update_layout(
         **_fig_layout("Distribuição por fonte"),
-        xaxis=dict(title="", tickangle=-20),
-        yaxis=dict(title="Termos"),
         showlegend=False,
     )
+    fig.update_xaxes(title="", tickangle=-20)
+    fig.update_yaxes(title="Termos")
     fig.update_traces(textposition="outside", textfont=dict(color="#c9d1d9"))
     return dcc.Graph(figure=fig)
 
@@ -601,9 +648,9 @@ def _update_sentiment_overall(temas, fontes, sentimento, start, end):
     fig.update_layout(
         **_fig_layout("Distribuição de sentimento por tema"),
         barmode="group",
-        yaxis=dict(title="Percentual", tickformat=".0%"),
         showlegend=True,
     )
+    fig.update_yaxes(title="Percentual", tickformat=".0%")
     return dcc.Graph(figure=fig)
 
 
