@@ -1,0 +1,19 @@
+fontes_rss:
+  - nome: "g1"
+    url: "https://g1.globo.com/rss/g1/"
+  - nome: "folha"
+    url: "https://feeds.folha.uol.com.br/emcimadahora/rss091.xml"
+  - nome: "cnn_brasil"
+    url: "https://www.cnnbrasil.com.br/feed/"
+
+stopwords_customizadas:
+  - "segundo"
+  - "afirmou"
+  - "disse"
+  - "ainda"
+  - "após"
+
+janela_historica_dias: 14
+threshold_similaridade_dedup: 0.75
+threshold_zscore_emergente: 2.0
+corpus_minimo_tfidf: 5
