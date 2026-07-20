@@ -14,8 +14,10 @@ def load_historical_baseline(
         return pd.DataFrame(columns=["termo", "media_frequencia", "std_frequencia"])
 
     df_gold = pd.read_parquet(gold_file)
-    df_gold = df_gold[df_gold["data"] < data_atual]
-    df_gold = df_gold[df_gold["data"] >= data_atual - pd.Timedelta(days=janela_dias)]
+    df_gold["data"] = pd.to_datetime(df_gold["data"])
+    data_atual_dt = pd.to_datetime(data_atual)
+    df_gold = df_gold[df_gold["data"] < data_atual_dt]
+    df_gold = df_gold[df_gold["data"] >= data_atual_dt - pd.Timedelta(days=janela_dias)]
 
     if df_gold.empty:
         logger.info("Nenhum dado histórico disponível na janela")
