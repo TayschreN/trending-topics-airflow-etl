@@ -1,6 +1,7 @@
 import pandas as pd
 import logging
 import os
+from collections import Counter
 
 logger = logging.getLogger(__name__)
 
@@ -59,21 +60,26 @@ def aggregate_daily_results(
     df_merged["tema"] = df_merged["termo"].apply(_categorizar_termo)
 
     sentimento_por_termo = {}
+    fontes_por_termo = {}
     for _, row in df_noticias.iterrows():
         texto = str(row.get("texto_completo", "")).lower()
         label = row.get("sentimento_label", "NEU")
         score = row.get("sentimento_score", 0.0)
+        fonte = row.get("fonte", "desconhecida")
         for termo in df_merged["termo"]:
             if termo in texto:
                 if termo not in sentimento_por_termo:
                     sentimento_por_termo[termo] = {"scores": [], "labels": []}
+                    fontes_por_termo[termo] = []
                 sentimento_por_termo[termo]["scores"].append(
                     _sentimento_pontuado(label, score)
                 )
                 sentimento_por_termo[termo]["labels"].append(label)
+                fontes_por_termo[termo].append(fonte)
 
     df_merged["sentimento_medio_termo"] = 0.0
     df_merged["sentimento_predominante_termo"] = "NEU"
+    df_merged["fontes"] = ""
     for i, termo in enumerate(df_merged["termo"]):
         if termo in sentimento_por_termo:
             data = sentimento_por_termo[termo]
@@ -85,6 +91,8 @@ def aggregate_daily_results(
                 df_merged.at[i, "sentimento_predominante_termo"] = max(
                     set(data["labels"]), key=data["labels"].count
                 )
+        if termo in fontes_por_termo:
+            df_merged.at[i, "fontes"] = ",".join(sorted(set(fontes_por_termo[termo])))
 
     df_merged["data"] = data_execucao
     df_gold_1 = df_merged[
@@ -98,6 +106,7 @@ def aggregate_daily_results(
             "tema",
             "sentimento_medio_termo",
             "sentimento_predominante_termo",
+            "fontes",
         ]
     ]
 

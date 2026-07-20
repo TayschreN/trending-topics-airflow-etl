@@ -2,6 +2,8 @@
 
 ![Dashboard](dashboard/screenshots/dashboard_full.png)
 
+> Dashboard moderno com tema escuro, 6 KPIs, 8 gráficos interativos, wordcloud e tabela de tópicos emergentes.
+
 Pipeline ETL que coleta notícias de portais brasileiros (G1, Folha, CNN Brasil), processa com NLP, analisa sentimento e detecta tópicos emergentes, tudo orquestrado pelo Apache Airflow e visualizado em um dashboard interativo com Dash.
 
 ## Arquitetura
@@ -76,7 +78,7 @@ Dash oferece maior controle de layout com callbacks reativos, ideal para múltip
 | Processamento | pandas, nltk, scikit-learn |
 | Sentimento | pysentimiento (BERT pt) |
 | Armazenamento | Parquet (bronze/silver/gold) |
-| Vizualização | Dash + Plotly + wordcloud |
+| Vizualização | Dash + Plotly + wordcloud (tema escuro, 8 gráficos) |
 | Testes | pytest |
 | Config | YAML |
 | Containerização | Docker + docker-compose |
